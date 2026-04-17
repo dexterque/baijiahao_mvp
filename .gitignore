@@ -1,0 +1,8 @@
+.env
+.venv/
+.streamlit/
+__pycache__/
+*.pyc
+data/*.db
+exports/*.md
+exports/*.txt
