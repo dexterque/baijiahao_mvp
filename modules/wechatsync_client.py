@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
@@ -48,10 +49,30 @@ def build_markdown(title: str, content: str) -> str:
     return f"# {cleaned_title}\n\n{cleaned_content}\n"
 
 
-def export_draft_markdown(draft_id: int, title: str, content: str) -> Path:
+def _cover_markdown_image(cover: str, markdown_path: Path) -> str:
+    cover_value = clean_text(cover)
+    if not cover_value:
+        return ""
+    if cover_value.startswith("http://") or cover_value.startswith("https://"):
+        return f"![封面图]({cover_value})"
+
+    cover_path = Path(cover_value).expanduser()
+    if not cover_path.exists():
+        return ""
+    markdown_ref = Path(
+        os.path.relpath(cover_path.resolve(), start=markdown_path.parent.resolve())
+    ).as_posix()
+    return f"![封面图]({markdown_ref})"
+
+
+def export_draft_markdown(draft_id: int, title: str, content: str, cover: str | None = None) -> Path:
     ensure_directories()
     markdown_path = PROJECT_ROOT / "exports" / "wechatsync" / f"draft_{draft_id}.md"
-    markdown_path.write_text(build_markdown(title, content), encoding="utf-8")
+    markdown_content = build_markdown(title, content)
+    cover_block = _cover_markdown_image(cover or "", markdown_path)
+    if cover_block:
+        markdown_content = markdown_content.replace("\n\n", f"\n\n{cover_block}\n\n", 1)
+    markdown_path.write_text(markdown_content, encoding="utf-8")
     return markdown_path
 
 
@@ -63,7 +84,7 @@ def sync_draft_to_platform(
     cover: str | None = None,
 ) -> dict[str, str]:
     target_platform = clean_text(platform) or _resolve_platform()
-    markdown_path = export_draft_markdown(draft_id, title, content)
+    markdown_path = export_draft_markdown(draft_id, title, content, cover=cover)
     command = _resolve_command() + [
         "sync",
         str(markdown_path),

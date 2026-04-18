@@ -9,7 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from modules import db, draft_generator, fact_checker, image_generator, keyword_extractor, official_sync, topic_generator, wechatsync_client  # noqa: E402
+from modules import cover_generator, db, draft_generator, fact_checker, keyword_extractor, official_sync, topic_generator, wechatsync_client  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -67,6 +67,11 @@ def parse_args() -> argparse.Namespace:
         "--cover-quality",
         default="medium",
         help="封面图质量，默认 medium，可选 low、medium、high。",
+    )
+    parser.add_argument(
+        "--cover-provider",
+        default="local",
+        help="封面图生成器，默认 local，可选 local、met、auto、openai。",
     )
     parser.add_argument(
         "--platform",
@@ -161,23 +166,20 @@ def main() -> int:
         f"状态={fact_result['fact_status']}，说明={fact_result['fact_notes']}"
     )
 
-    cover_data_uri: str | None = None
+    cover_input: str | None = None
     if not args.skip_cover_generation:
         print_step("开始生成封面图")
-        cover_prompt = image_generator.build_cover_prompt(
+        cover_result = cover_generator.generate_cover_asset(
+            draft_id=draft_id,
             title=topic,
             article_content=draft_content,
             main_keyword=main_keyword,
-        )
-        cover_image = image_generator.generate_image(
-            prompt=cover_prompt,
+            provider=args.cover_provider,
             size=args.cover_size,
             quality=args.cover_quality,
         )
-        cover_filename = image_generator.build_cover_filename(draft_id)
-        cover_path = image_generator.save_cover_image(cover_image, cover_filename)
-        cover_data_uri = image_generator.build_image_data_uri(cover_image)
-        print_step(f"封面图已生成：{cover_path}")
+        cover_input = str(cover_result["path"])
+        print_step(f"封面图已生成：{cover_result['path']}（provider={cover_result['provider']}）")
 
     if args.skip_sync:
         print_step("已按参数跳过草稿箱同步")
@@ -203,7 +205,7 @@ def main() -> int:
             title=topic,
             content=draft_content,
             platform=args.platform,
-            cover=cover_data_uri,
+            cover=cover_input,
         )
     except Exception as exc:
         db.update_draft_sync_status(draft_id, args.platform, "failed", str(exc))

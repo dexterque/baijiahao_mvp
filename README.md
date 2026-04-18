@@ -120,6 +120,9 @@ DATABASE_PATH=data/baijiahao.db
 WECHATSYNC_BIN=
 WECHATSYNC_PLATFORM=baijiahao
 WECHATSYNC_TIMEOUT_SECONDS=300
+WECHATSYNC_TOKEN=
+COVER_PROVIDER=local
+COVER_LIBRARY_DIR=assets/covers
 ```
 
 你可以用下面的方式快速检查接口：
@@ -307,6 +310,7 @@ uv run python scripts/run_scheduled_pipeline.py --rebuild-keywords
 - `--official-detail-limit 10`：官方资料同步深度
 - `--strict-fact-check`：只允许 `pass` 推送，`warning` 也拦住
 - `--skip-cover-generation`：跳过自动封面图生成
+- `--cover-provider local`：封面图生成器，默认从本地图库随机选图，可选 local、met、auto、openai
 - `--cover-size 1536x1024`：设置封面图尺寸
 - `--cover-quality medium`：设置封面图质量
 - `--skip-sync`：只生成草稿，不推送百家号
@@ -327,7 +331,9 @@ uv run python scripts/run_scheduled_pipeline.py --rebuild-keywords
 
 - 定时任务运行时，确保 `openai-oauth` 已经在本机持续运行
 - 确保浏览器 Wechatsync 扩展在线，且百家号登录态未失效
-- 流水线默认会基于文章标题、正文和主关键词生成 OpenAI 封面图，并连同草稿一起同步
+- 流水线默认会从 `assets/covers/` 本地图库随机选择封面图，并复制一份到 `exports/covers/`
+- 如果你希望自动拉取公版艺术作品封面，可以用 `--cover-provider met`
+- 如果你想继续尝试在线生图，可把 `--cover-provider` 改成 `openai` 或 `auto`
 - 初期先不要开太高频，建议每天 1 到 3 次，人工观察几天再放大
 
 ## 后续建议

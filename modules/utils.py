@@ -22,6 +22,8 @@ def ensure_directories() -> None:
     (PROJECT_ROOT / "data").mkdir(parents=True, exist_ok=True)
     (PROJECT_ROOT / "exports").mkdir(parents=True, exist_ok=True)
     (PROJECT_ROOT / "exports" / "wechatsync").mkdir(parents=True, exist_ok=True)
+    (PROJECT_ROOT / "exports" / "covers").mkdir(parents=True, exist_ok=True)
+    (PROJECT_ROOT / "assets" / "covers").mkdir(parents=True, exist_ok=True)
 
 
 def now_str() -> str:
