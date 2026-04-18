@@ -126,7 +126,13 @@ def save_export_file(filename: str, content: str) -> Path:
     return path
 
 
+def save_export_bytes(filename: str, content: bytes) -> Path:
+    ensure_directories()
+    path = PROJECT_ROOT / "exports" / filename
+    path.write_bytes(content)
+    return path
+
+
 def env_or_default(name: str, default: str) -> str:
     load_env()
     return os.getenv(name, default)
-

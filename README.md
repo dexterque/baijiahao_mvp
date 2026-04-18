@@ -7,8 +7,9 @@
 3. 同步深圳公安官网白名单官方资料
 4. 使用 LLM 生成 5 个选题
 5. 基于关键词和官方资料生成文章初稿
-6. 做轻量事实校验
-7. 导出 `.txt` 或 `.md`，人工发布到百家号
+6. 基于草稿一键生成封面图
+7. 做轻量事实校验
+8. 导出 `.txt`、`.md` 或封面图，人工发布到百家号
 
 ## 技术栈
 
@@ -38,6 +39,7 @@ baijiahao_mvp/
    ├─ utils.py
    ├─ article_importer.py
    ├─ keyword_extractor.py
+   ├─ image_generator.py
    ├─ official_parser.py
    ├─ official_sync.py
    ├─ llm_client.py
@@ -89,6 +91,9 @@ http://127.0.0.1:10531/v1
 MODEL_BASE_URL=http://127.0.0.1:10531/v1
 MODEL_API_KEY=dummy
 MODEL_NAME=gpt-5.4
+IMAGE_BASE_URL=http://127.0.0.1:10531/v1
+IMAGE_API_KEY=dummy
+IMAGE_MODEL_NAME=gpt-image-1
 DATABASE_PATH=data/baijiahao.db
 ```
 
@@ -149,6 +154,8 @@ CSV 至少支持这些列名：
 - 调用 LLM 生成 5 个选题
 - 匹配相关官方资料
 - 生成并保存文章草稿
+- 基于草稿标题和正文一键生成封面图
+- 下载或保存 PNG 封面图
 
 ### 页面 5：轻量校验
 

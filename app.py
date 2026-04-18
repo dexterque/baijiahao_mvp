@@ -1,12 +1,11 @@
 from __future__ import annotations
-
 import json
 from pathlib import Path
 
 import streamlit as st
 
-from modules import article_importer, db, draft_generator, fact_checker, keyword_extractor, official_sync, topic_generator
-from modules.utils import clean_text, load_env, save_export_file, shorten
+from modules import article_importer, db, draft_generator, fact_checker, image_generator, keyword_extractor, official_sync, topic_generator
+from modules.utils import clean_text, load_env, save_export_bytes, save_export_file, shorten
 
 
 load_env()
@@ -135,6 +134,22 @@ def render_draft_page() -> None:
         st.info("请先导入文章并在关键词页生成关键词。")
         return
 
+    success_message = st.session_state.pop("draft_generation_success", None)
+    if success_message:
+        st.success(success_message)
+
+    error_message = st.session_state.pop("draft_generation_error", None)
+    if error_message:
+        st.error(error_message)
+
+    image_success_message = st.session_state.pop("image_generation_success", None)
+    if image_success_message:
+        st.success(image_success_message)
+
+    image_error_message = st.session_state.pop("image_generation_error", None)
+    if image_error_message:
+        st.error(image_error_message)
+
     main_keyword = st.selectbox("主关键词", keyword_options)
     default_related = [keyword for keyword in keyword_options if keyword != main_keyword][:5]
     related_keywords = st.multiselect("相关关键词", keyword_options, default=default_related)
@@ -161,26 +176,44 @@ def render_draft_page() -> None:
         st.warning("当前关键词没有匹配到官方资料，生成草稿时会使用保守表达。")
 
     draft_title = st.text_input("草稿标题", value=selected_topic)
-    if st.button("生成文章初稿", disabled=not selected_topic):
-        try:
-            content = draft_generator.generate_draft(
-                topic=selected_topic,
-                main_keyword=main_keyword,
-                related_keywords=related_keywords,
-                official_docs=official_docs,
-            )
-            st.session_state["draft_content"] = content
-            st.session_state["draft_title"] = draft_title or selected_topic
-            draft_id = db.save_draft(
-                topic=selected_topic,
-                main_keyword=main_keyword,
-                title=draft_title or selected_topic,
-                content=content,
-            )
-            st.session_state["current_draft_id"] = draft_id
-            st.success(f"草稿已生成并保存，ID={draft_id}")
-        except Exception as exc:
-            st.error(str(exc))
+    pending_request = st.session_state.get("pending_draft_request")
+    if pending_request:
+        st.info("正在生成文章初稿，请稍候，生成完成后会自动显示结果。")
+        with st.spinner("正在基于选题和官方资料生成文章初稿..."):
+            try:
+                content = draft_generator.generate_draft(
+                    topic=pending_request["topic"],
+                    main_keyword=pending_request["main_keyword"],
+                    related_keywords=pending_request["related_keywords"],
+                    official_docs=pending_request["official_docs"],
+                )
+                st.session_state["draft_content"] = content
+                st.session_state["draft_title"] = pending_request["title"]
+                draft_id = db.save_draft(
+                    topic=pending_request["topic"],
+                    main_keyword=pending_request["main_keyword"],
+                    title=pending_request["title"],
+                    content=content,
+                )
+                st.session_state["current_draft_id"] = draft_id
+                st.session_state["generated_cover_image"] = None
+                st.session_state["generated_cover_image_name"] = None
+                st.session_state["draft_generation_success"] = f"草稿已生成并保存，ID={draft_id}"
+            except Exception as exc:
+                st.session_state["draft_generation_error"] = str(exc)
+            finally:
+                st.session_state["pending_draft_request"] = None
+        st.rerun()
+
+    if st.button("生成文章初稿", disabled=not selected_topic or pending_request is not None):
+        st.session_state["pending_draft_request"] = {
+            "topic": selected_topic,
+            "main_keyword": main_keyword,
+            "related_keywords": related_keywords,
+            "official_docs": [dict(row) for row in official_docs],
+            "title": draft_title or selected_topic,
+        }
+        st.rerun()
 
     if st.session_state.get("draft_content"):
         edited_title = st.text_input("编辑标题", value=st.session_state.get("draft_title", ""), key="edit_draft_title")
@@ -197,6 +230,86 @@ def render_draft_page() -> None:
                 st.session_state["draft_title"] = edited_title
                 st.session_state["draft_content"] = edited_content
                 st.success("草稿已更新。")
+
+        default_image_prompt = image_generator.build_cover_prompt(
+            title=st.session_state.get("draft_title", edited_title),
+            article_content=st.session_state.get("draft_content", edited_content),
+            main_keyword=main_keyword,
+        )
+        prompt_cache_key = (
+            st.session_state.get("current_draft_id"),
+            st.session_state.get("draft_title", edited_title),
+            st.session_state.get("draft_content", edited_content),
+            main_keyword,
+        )
+        if st.session_state.get("cover_image_prompt_seed") != prompt_cache_key:
+            st.session_state["cover_image_prompt"] = default_image_prompt
+            st.session_state["cover_image_prompt_seed"] = prompt_cache_key
+
+        st.subheader("封面图生成")
+        image_size = st.selectbox(
+            "图片尺寸",
+            ["1536x1024", "1024x1024", "1024x1536"],
+            index=0,
+            help="默认推荐横版 1536x1024，适合文章封面。",
+        )
+        image_quality = st.selectbox(
+            "图片质量",
+            ["medium", "low", "high"],
+            index=0,
+            help="质量越高越慢，也可能更贵。",
+        )
+        image_prompt = st.text_area(
+            "封面图提示词",
+            key="cover_image_prompt",
+            height=180,
+        )
+
+        pending_image_request = st.session_state.get("pending_image_request")
+        if pending_image_request:
+            st.info("正在生成封面图，请稍候，生成完成后会自动显示预览。")
+            with st.spinner("正在生成封面图..."):
+                try:
+                    image_bytes = image_generator.generate_image(
+                        prompt=pending_image_request["prompt"],
+                        size=pending_image_request["size"],
+                        quality=pending_image_request["quality"],
+                    )
+                    st.session_state["generated_cover_image"] = image_bytes
+                    st.session_state["generated_cover_image_name"] = pending_image_request["filename"]
+                    st.session_state["image_generation_success"] = "封面图已生成。"
+                except Exception as exc:
+                    st.session_state["image_generation_error"] = str(exc)
+                finally:
+                    st.session_state["pending_image_request"] = None
+            st.rerun()
+
+        if st.button("生成封面图", disabled=not image_prompt.strip() or pending_image_request is not None):
+            draft_id = st.session_state.get("current_draft_id") or "current"
+            st.session_state["pending_image_request"] = {
+                "prompt": image_prompt,
+                "size": image_size,
+                "quality": image_quality,
+                "filename": f"draft_{draft_id}_cover.png",
+            }
+            st.rerun()
+
+        generated_cover_image = st.session_state.get("generated_cover_image")
+        generated_cover_image_name = st.session_state.get("generated_cover_image_name", "draft_cover.png")
+        if generated_cover_image:
+            st.image(generated_cover_image, caption="已生成封面图", use_container_width=True)
+            image_col1, image_col2 = st.columns(2)
+            with image_col1:
+                st.download_button(
+                    "下载 PNG",
+                    data=generated_cover_image,
+                    file_name=generated_cover_image_name,
+                    mime="image/png",
+                )
+            with image_col2:
+                if st.button("保存 PNG 到 exports/"):
+                    path = save_export_bytes(generated_cover_image_name, generated_cover_image)
+                    st.success(f"已保存到 {path}")
 
 
 def render_fact_check_page() -> None:

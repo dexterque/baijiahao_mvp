@@ -5,7 +5,7 @@ from typing import Any
 import requests
 
 from modules import db
-from modules.official_parser import OfficialParserError, fetch_html, parse_detail_page, parse_listing_page
+from modules.official_parser import OfficialParserError, fetch_html, parse_listing_page, parse_remote_resource
 from modules.utils import compute_hash, split_sentences, unique_preserve
 
 
@@ -66,8 +66,11 @@ def sync_single_source(source: Any, detail_limit: int = 12) -> dict[str, Any]:
 
     for entry in entries:
         try:
-            detail_html = fetch_html(str(entry["url"]))
-            detail = parse_detail_page(detail_html, str(entry["url"]))
+            detail = parse_remote_resource(
+                str(entry["url"]),
+                fallback_title=str(entry["title"]),
+                fallback_publish_date=entry["publish_date"],
+            )
             action = db.upsert_official_doc(
                 source_id=int(source["id"]),
                 title=detail["title"] or str(entry["title"]),
@@ -106,4 +109,3 @@ def sync_all_sources(detail_limit: int = 12) -> dict[str, Any]:
         summary["verified"] += source_result["verified"]
         summary["failed"] += source_result["failed"]
     return summary
-

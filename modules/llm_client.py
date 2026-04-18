@@ -22,7 +22,6 @@ def generate_text(prompt: str) -> str:
     try:
         response = client.chat.completions.create(
             model=model_name,
-            temperature=0.4,
             messages=[
                 {
                     "role": "system",
@@ -48,4 +47,3 @@ def generate_text(prompt: str) -> str:
         text_parts = [part.text for part in message if getattr(part, "type", None) == "text"]
         return "\n".join(text_parts).strip()
     return (message or "").strip()
-
