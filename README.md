@@ -170,6 +170,7 @@ CSV 至少支持这些列名：
 - 从文章重建关键词
 - 展示词频、分类、来源文章数
 - 支持搜索和分类筛选
+- 自动生成时的主关键词/相关关键词来自此关键词库，需先导入竞品文章并重建关键词
 
 ### 页面 3：官方资料同步
 
@@ -300,6 +301,8 @@ uv run python scripts/sync_draft_to_baijiahao.py --checked-only --generate-cover
 ```bash
 uv run python scripts/run_scheduled_pipeline.py --rebuild-keywords
 ```
+
+> 注意：该命令默认会从关键词库里自动选主关键词和相关关键词，建议先导入竞品文章并执行关键词重建。若你希望固定主关键词，可加 `--main-keyword 入户`。
 
 常见参数：
 
