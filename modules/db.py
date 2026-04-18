@@ -60,6 +60,20 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+def _ensure_table_columns(
+    conn: sqlite3.Connection,
+    table_name: str,
+    columns: list[tuple[str, str]],
+) -> None:
+    existing_columns = {
+        row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    for column_name, column_definition in columns:
+        if column_name in existing_columns:
+            continue
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_definition}")
+
+
 def init_db() -> None:
     ensure_directories()
     with get_connection() as conn:
@@ -127,10 +141,25 @@ def init_db() -> None:
                 content TEXT NOT NULL,
                 fact_status TEXT DEFAULT 'unchecked',
                 fact_notes TEXT,
+                sync_status TEXT DEFAULT 'unsynced',
+                sync_platform TEXT,
+                sync_message TEXT,
+                synced_at TEXT,
                 created_at TEXT NOT NULL
             );
             """
         )
+        _ensure_table_columns(
+            conn,
+            "drafts",
+            [
+                ("sync_status", "sync_status TEXT DEFAULT 'unsynced'"),
+                ("sync_platform", "sync_platform TEXT"),
+                ("sync_message", "sync_message TEXT"),
+                ("synced_at", "synced_at TEXT"),
+            ],
+        )
+        conn.execute("UPDATE drafts SET sync_status = 'unsynced' WHERE sync_status IS NULL")
     seed_default_sources()
 
 
@@ -485,6 +514,23 @@ def update_draft_fact_check(draft_id: int, fact_status: str, fact_notes: str) ->
             WHERE id = ?
             """,
             (fact_status, fact_notes, draft_id),
+        )
+
+
+def update_draft_sync_status(
+    draft_id: int,
+    sync_platform: str,
+    sync_status: str,
+    sync_message: str,
+) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE drafts
+            SET sync_platform = ?, sync_status = ?, sync_message = ?, synced_at = ?
+            WHERE id = ?
+            """,
+            (sync_platform, sync_status, sync_message, now_str(), draft_id),
         )
 
 

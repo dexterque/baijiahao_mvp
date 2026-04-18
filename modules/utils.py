@@ -21,6 +21,7 @@ def load_env() -> None:
 def ensure_directories() -> None:
     (PROJECT_ROOT / "data").mkdir(parents=True, exist_ok=True)
     (PROJECT_ROOT / "exports").mkdir(parents=True, exist_ok=True)
+    (PROJECT_ROOT / "exports" / "wechatsync").mkdir(parents=True, exist_ok=True)
 
 
 def now_str() -> str:
@@ -136,3 +137,10 @@ def save_export_bytes(filename: str, content: bytes) -> Path:
 def env_or_default(name: str, default: str) -> str:
     load_env()
     return os.getenv(name, default)
+
+
+def render_prompt_template(template: str, **kwargs: Any) -> str:
+    rendered = template
+    for key, value in kwargs.items():
+        rendered = rendered.replace(f"{{{key}}}", str(value))
+    return rendered

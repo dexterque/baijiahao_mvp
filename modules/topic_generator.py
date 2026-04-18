@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from modules import db
 from modules.llm_client import generate_text
-from modules.utils import PROJECT_ROOT, extract_json_block, json_loads_safe, shorten, unique_preserve
+from modules.utils import PROJECT_ROOT, extract_json_block, json_loads_safe, render_prompt_template, shorten, unique_preserve
 
 
 PROMPT_PATH = PROJECT_ROOT / "prompts" / "topic_prompt.txt"
@@ -19,7 +19,8 @@ def generate_topics(main_keyword: str, related_keywords: list[str] | None = None
         f"- {row['title']}: {shorten(row['content_text'], 120)}"
         for row in related_docs
     ) or "暂无匹配到足够的官方资料，请保持保守表达。"
-    prompt = _load_prompt().format(
+    prompt = render_prompt_template(
+        _load_prompt(),
         main_keyword=main_keyword,
         related_keywords="、".join(related_keywords) if related_keywords else "无",
         official_context=official_context,
@@ -33,4 +34,3 @@ def generate_topics(main_keyword: str, related_keywords: list[str] | None = None
         topics = [line.strip("-• ").strip() for line in raw.splitlines() if line.strip()]
     topics = [topic for topic in unique_preserve(topics) if topic and len(topic) <= 28]
     return topics[:5]
-

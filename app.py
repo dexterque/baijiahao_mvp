@@ -4,7 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from modules import article_importer, db, draft_generator, fact_checker, image_generator, keyword_extractor, official_sync, topic_generator
+from modules import article_importer, db, draft_generator, fact_checker, image_generator, keyword_extractor, official_sync, topic_generator, wechatsync_client
 from modules.utils import clean_text, load_env, save_export_bytes, save_export_file, shorten
 
 
@@ -326,6 +326,14 @@ def render_fact_check_page() -> None:
         st.warning("未找到草稿。")
         return
 
+    sync_success_message = st.session_state.pop("draft_sync_success", None)
+    if sync_success_message:
+        st.success(sync_success_message)
+
+    sync_error_message = st.session_state.pop("draft_sync_error", None)
+    if sync_error_message:
+        st.error(sync_error_message)
+
     official_docs = db.search_official_docs(draft["main_keyword"] or "", limit=5)
     st.markdown(f"**主关键词**：{draft['main_keyword'] or '未记录'}")
     st.markdown(f"**当前状态**：{draft['fact_status'] or 'unchecked'}")
@@ -353,6 +361,52 @@ def render_fact_check_page() -> None:
             st.markdown("**参考官方资料标题**")
             for title in result["referenced_docs"]:
                 st.write(f"- {title}")
+
+    st.subheader("百家号草稿箱同步")
+    st.caption("通过本地 wechatsync CLI 与 Chrome 扩展联动，把当前草稿保存到百家号草稿箱，不会自动正式发布。")
+    st.markdown(f"**最近状态**：`{draft['sync_status'] or 'unsynced'}`")
+    st.markdown(f"**目标平台**：{draft['sync_platform'] or 'baijiahao'}")
+    st.markdown(f"**最近时间**：{draft['synced_at'] or '未同步'}")
+    st.text_area(
+        "sync_message",
+        value=draft["sync_message"] or "暂无同步记录。",
+        height=120,
+        label_visibility="collapsed",
+    )
+
+    if st.button("同步到百家号草稿箱", key=f"sync_to_baijiahao_{draft['id']}"):
+        with st.spinner("正在调用 wechatsync，同步到百家号草稿箱..."):
+            title = draft["title"] or draft["topic"] or f"draft_{draft['id']}"
+            try:
+                sync_result = wechatsync_client.sync_draft_to_platform(
+                    draft_id=int(draft["id"]),
+                    title=title,
+                    content=str(draft["content"]),
+                    platform="baijiahao",
+                )
+                db.update_draft_sync_status(
+                    int(draft["id"]),
+                    str(sync_result["platform"]),
+                    "synced",
+                    str(sync_result["output"]),
+                )
+                st.session_state["draft_sync_success"] = "已同步到百家号草稿箱，请到百家号后台草稿箱确认。"
+                st.session_state["last_wechatsync_result"] = {
+                    **sync_result,
+                    "draft_id": int(draft["id"]),
+                }
+                st.rerun()
+            except Exception as exc:
+                db.update_draft_sync_status(int(draft["id"]), "baijiahao", "failed", str(exc))
+                st.session_state["draft_sync_error"] = str(exc)
+                st.rerun()
+
+    last_wechatsync_result = st.session_state.get("last_wechatsync_result")
+    if last_wechatsync_result and int(last_wechatsync_result.get("draft_id", -1)) == int(draft["id"]):
+        with st.expander("查看最近一次 wechatsync 输出", expanded=False):
+            st.code(str(last_wechatsync_result["command"]))
+            st.code(str(last_wechatsync_result["output"]))
+            st.caption(f"已导出 Markdown：{last_wechatsync_result['markdown_path']}")
 
     txt_content = clean_text(draft["content"])
     md_content = f"# {draft['title'] or draft['topic']}\n\n{txt_content}\n"

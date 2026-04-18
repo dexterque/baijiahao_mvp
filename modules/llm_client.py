@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
+import httpx
 from openai import APIConnectionError, APITimeoutError, OpenAI
 
 from modules.utils import env_or_default, load_env
@@ -9,12 +12,19 @@ class LLMClientError(RuntimeError):
     pass
 
 
+def _should_ignore_env_proxy(base_url: str) -> bool:
+    parsed = urlparse(base_url)
+    hostname = (parsed.hostname or "").lower()
+    return hostname in {"127.0.0.1", "localhost", "::1"}
+
+
 def _client() -> tuple[OpenAI, str, str]:
     load_env()
     base_url = env_or_default("MODEL_BASE_URL", "http://127.0.0.1:10531/v1")
     api_key = env_or_default("MODEL_API_KEY", "dummy")
     model_name = env_or_default("MODEL_NAME", "gpt-5.4")
-    return OpenAI(base_url=base_url, api_key=api_key, timeout=60.0), model_name, base_url
+    http_client = httpx.Client(timeout=60.0, trust_env=False) if _should_ignore_env_proxy(base_url) else None
+    return OpenAI(base_url=base_url, api_key=api_key, timeout=60.0, http_client=http_client), model_name, base_url
 
 
 def generate_text(prompt: str) -> str:

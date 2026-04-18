@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
+from urllib.parse import urlparse
 
+import httpx
 import requests
 from openai import APIConnectionError, APITimeoutError, OpenAI
 
-from modules.utils import clean_text, env_or_default, load_env, shorten
+from modules.utils import PROJECT_ROOT, clean_text, ensure_directories, env_or_default, load_env, shorten
 
 
 class ImageGenerationError(RuntimeError):
     pass
+
+
+def _should_ignore_env_proxy(base_url: str) -> bool:
+    parsed = urlparse(base_url)
+    hostname = (parsed.hostname or "").lower()
+    return hostname in {"127.0.0.1", "localhost", "::1"}
 
 
 def _client() -> tuple[OpenAI, str, str]:
@@ -17,7 +26,8 @@ def _client() -> tuple[OpenAI, str, str]:
     base_url = env_or_default("IMAGE_BASE_URL", env_or_default("MODEL_BASE_URL", "http://127.0.0.1:10531/v1"))
     api_key = env_or_default("IMAGE_API_KEY", env_or_default("MODEL_API_KEY", "dummy"))
     model_name = env_or_default("IMAGE_MODEL_NAME", "gpt-image-1")
-    return OpenAI(base_url=base_url, api_key=api_key, timeout=120.0), model_name, base_url
+    http_client = httpx.Client(timeout=120.0, trust_env=False) if _should_ignore_env_proxy(base_url) else None
+    return OpenAI(base_url=base_url, api_key=api_key, timeout=120.0, http_client=http_client), model_name, base_url
 
 
 def build_cover_prompt(title: str, article_content: str, main_keyword: str = "") -> str:
@@ -78,3 +88,18 @@ def generate_image(
         return download.content
 
     raise ImageGenerationError("图片生成接口返回了未知格式，未拿到图片数据。")
+
+
+def build_cover_filename(draft_id: int, output_format: str = "png") -> str:
+    return f"draft_{draft_id}_cover.{output_format}"
+
+
+def save_cover_image(image_bytes: bytes, filename: str) -> Path:
+    ensure_directories()
+    path = PROJECT_ROOT / "exports" / filename
+    path.write_bytes(image_bytes)
+    return path
+
+
+def build_image_data_uri(image_bytes: bytes, mime_type: str = "image/png") -> str:
+    return f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}"

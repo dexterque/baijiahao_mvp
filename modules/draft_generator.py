@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from modules.llm_client import generate_text
-from modules.utils import PROJECT_ROOT, shorten
+from modules.utils import PROJECT_ROOT, render_prompt_template, shorten
 
 
 PROMPT_PATH = PROJECT_ROOT / "prompts" / "article_prompt.txt"
@@ -35,11 +35,11 @@ def generate_draft(
     related_keywords: list[str],
     official_docs: Sequence[object],
 ) -> str:
-    prompt = _load_prompt().format(
+    prompt = render_prompt_template(
+        _load_prompt(),
         topic=topic,
         main_keyword=main_keyword,
         related_keywords="、".join(related_keywords) if related_keywords else "无",
         official_snippets=build_official_snippets(official_docs),
     )
     return generate_text(prompt)
-

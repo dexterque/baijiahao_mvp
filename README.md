@@ -9,7 +9,7 @@
 5. 基于关键词和官方资料生成文章初稿
 6. 基于草稿一键生成封面图
 7. 做轻量事实校验
-8. 导出 `.txt`、`.md` 或封面图，人工发布到百家号
+8. 导出 `.txt`、`.md`、封面图，或一键同步到百家号草稿箱
 
 ## 技术栈
 
@@ -34,6 +34,9 @@ baijiahao_mvp/
 │  ├─ topic_prompt.txt
 │  ├─ article_prompt.txt
 │  └─ fact_check_prompt.txt
+├─ scripts/
+│  ├─ sync_draft_to_baijiahao.py
+│  └─ run_scheduled_pipeline.py
 └─ modules/
    ├─ db.py
    ├─ utils.py
@@ -45,7 +48,8 @@ baijiahao_mvp/
    ├─ llm_client.py
    ├─ topic_generator.py
    ├─ draft_generator.py
-   └─ fact_checker.py
+   ├─ fact_checker.py
+   └─ wechatsync_client.py
 ```
 
 ## 启动步骤
@@ -59,11 +63,29 @@ source .venv/bin/activate
 uv pip install -r requirements.txt
 ```
 
-### 2. 安装 Codex CLI
+### 2. 安装 Wechatsync CLI
+
+用于把本地草稿同步到百家号草稿箱：
+
+```bash
+npm install -g @wechatsync/cli
+```
+
+如果你不想全局安装，也可以不配这一步，项目会优先尝试 `wechatsync`，找不到时自动回退到：
+
+```bash
+npx -y @wechatsync/cli
+```
+
+### 3. 安装 Chrome 扩展并登录百家号
+
+先安装 Wechatsync Chrome 扩展，并确保浏览器里已经登录百家号后台。CLI 只负责发起同步，真正的平台登录态来自浏览器扩展。
+
+### 4. 安装 Codex CLI
 
 请先按你当前环境使用的 Codex CLI 安装方式完成安装，并确保命令可执行。
 
-### 3. 安装 `openai-oauth`
+### 5. 安装 `openai-oauth`
 
 常见做法是通过 Node.js 环境安装或直接用 `npx` 运行：
 
@@ -73,11 +95,11 @@ npx openai-oauth
 
 如果你使用的是其他安装方式，请以对应版本说明为准。
 
-### 4. 完成本地登录认证
+### 6. 完成本地登录认证
 
 先完成 Codex / OpenAI 本地登录，确保本机已经有可用认证状态。未登录或登录失效时，`openai-oauth` 一般无法正常代理请求。
 
-### 5. 启动本地网关
+### 7. 启动本地网关
 
 确保本地 OpenAI-compatible 网关启动，并监听在：
 
@@ -95,6 +117,9 @@ IMAGE_BASE_URL=http://127.0.0.1:10531/v1
 IMAGE_API_KEY=dummy
 IMAGE_MODEL_NAME=gpt-image-1
 DATABASE_PATH=data/baijiahao.db
+WECHATSYNC_BIN=
+WECHATSYNC_PLATFORM=baijiahao
+WECHATSYNC_TIMEOUT_SECONDS=300
 ```
 
 你可以用下面的方式快速检查接口：
@@ -105,7 +130,7 @@ curl http://127.0.0.1:10531/v1/models
 
 返回模型列表或 JSON 响应即可。
 
-### 6. 启动项目
+### 8. 启动项目
 
 ```bash
 cp .env.example .env
@@ -114,11 +139,12 @@ uv run streamlit run app.py
 
 启动顺序建议固定为：
 
-1. 安装并登录 Codex
-2. 完成本地认证
-3. 启动 `openai-oauth`
-4. 确认 `http://127.0.0.1:10531/v1/models` 可访问
-5. 启动 Streamlit 项目
+1. 安装并登录百家号与 Wechatsync Chrome 扩展
+2. 安装并登录 Codex
+3. 完成本地认证
+4. 启动 `openai-oauth`
+5. 确认 `http://127.0.0.1:10531/v1/models` 可访问
+6. 启动 Streamlit 项目
 
 ## 页面说明
 
@@ -163,6 +189,7 @@ CSV 至少支持这些列名：
 - 检查是否引用到官方资料
 - 识别可能写死时间、入口、条件但缺少支撑的句子
 - 导出 `.txt` / `.md`
+- 一键同步到百家号草稿箱
 
 ## 官方来源白名单
 
@@ -213,6 +240,20 @@ CSV 至少支持这些列名：
 - 检查网络是否能访问 `ga.sz.gov.cn`
 - 某个详情页失败不会中断整批同步
 
+### 百家号草稿箱同步失败
+
+现象：
+
+- 页面提示 `wechatsync` 执行失败
+- 提示扩展未连接或平台未登录
+
+处理：
+
+- 确认 Chrome 扩展已安装并启用
+- 确认浏览器里已登录百家号后台
+- 如果没有全局安装 CLI，可先试 `npx -y @wechatsync/cli platforms`
+- 如需自定义命令路径，可在 `.env` 中设置 `WECHATSYNC_BIN`
+
 ### 模型连接失败
 
 现象：
@@ -228,10 +269,66 @@ CSV 至少支持这些列名：
 ## 已知限制
 
 - 仅支持单用户本地运行
-- 不做百家号自动登录和自动发布
+- 不做百家号自动登录和自动正式发布，只同步到草稿箱
 - 官方资料解析基于白名单页面结构和通用 HTML 规则，不保证覆盖所有栏目模板
 - 轻量事实校验不是 claim 级逐句证据系统
 - 如果官方资料本身不完整，草稿会倾向保守表达
+
+## 定时同步草稿箱
+
+如果你只是希望“定时推到百家号草稿箱”，可以直接配系统定时任务调用：
+
+```bash
+uv run python scripts/sync_draft_to_baijiahao.py --checked-only --generate-cover
+```
+
+示例 `crontab`：
+
+```bash
+*/30 * * * * cd /Users/dexter/Code/baijiahao_mvp && /usr/bin/env bash -lc 'source .venv/bin/activate && uv run python scripts/sync_draft_to_baijiahao.py --checked-only --generate-cover'
+```
+
+这会优先选择最近一篇 `fact_status=checked` 的草稿，同步到百家号草稿箱。
+
+## 定时生成内容并推送草稿箱
+
+如果你希望“自动生成一篇新内容，然后自动推到百家号草稿箱”，可以使用：
+
+```bash
+uv run python scripts/run_scheduled_pipeline.py --rebuild-keywords
+```
+
+常见参数：
+
+- `--main-keyword 入户`：固定主关键词，不走自动选择
+- `--related-keyword-count 6`：自动附带更多相关词
+- `--topic-index 0`：默认选第 1 个选题
+- `--sync-official`：运行前先同步官方资料
+- `--official-detail-limit 10`：官方资料同步深度
+- `--strict-fact-check`：只允许 `pass` 推送，`warning` 也拦住
+- `--skip-cover-generation`：跳过自动封面图生成
+- `--cover-size 1536x1024`：设置封面图尺寸
+- `--cover-quality medium`：设置封面图质量
+- `--skip-sync`：只生成草稿，不推送百家号
+
+推荐的定时任务示例：
+
+```bash
+0 9,15,21 * * * cd /Users/dexter/Code/baijiahao_mvp && /usr/bin/env bash -lc 'mkdir -p logs && source .venv/bin/activate && uv run python scripts/run_scheduled_pipeline.py --rebuild-keywords >> logs/pipeline.log 2>&1'
+```
+
+如果你希望每天先拉一轮官方资料，再生成并推送：
+
+```bash
+0 8 * * * cd /Users/dexter/Code/baijiahao_mvp && /usr/bin/env bash -lc 'mkdir -p logs && source .venv/bin/activate && uv run python scripts/run_scheduled_pipeline.py --sync-official --rebuild-keywords >> logs/pipeline.log 2>&1'
+```
+
+建议：
+
+- 定时任务运行时，确保 `openai-oauth` 已经在本机持续运行
+- 确保浏览器 Wechatsync 扩展在线，且百家号登录态未失效
+- 流水线默认会基于文章标题、正文和主关键词生成 OpenAI 封面图，并连同草稿一起同步
+- 初期先不要开太高频，建议每天 1 到 3 次，人工观察几天再放大
 
 ## 后续建议
 

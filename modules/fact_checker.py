@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from modules.llm_client import LLMClientError, generate_text
-from modules.utils import PROJECT_ROOT, json_loads_safe, shorten, split_sentences, unique_preserve
+from modules.utils import PROJECT_ROOT, json_loads_safe, render_prompt_template, shorten, split_sentences, unique_preserve
 
 
 PROMPT_PATH = PROJECT_ROOT / "prompts" / "fact_check_prompt.txt"
@@ -63,7 +63,8 @@ def _rule_based_check(draft_text: str, official_docs: Sequence[object]) -> tuple
 def _llm_assisted_check(draft_text: str, official_docs: Sequence[object]) -> tuple[str | None, list[str], list[str]]:
     if not official_docs:
         return None, [], []
-    prompt = _load_prompt().format(
+    prompt = render_prompt_template(
+        _load_prompt(),
         draft_text=draft_text,
         official_snippets=build_official_snippets(official_docs),
     )
